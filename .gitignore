@@ -4,8 +4,8 @@
 # build directory
 build/
 
-# config.yml file
-config.yml
+# config.yml file (runtime config at repo root only)
+/config.yml
 
 # generated ca certificate directory
 ca/

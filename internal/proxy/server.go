@@ -157,6 +157,10 @@ type Server struct {
 	ctx     context.Context
 }
 
+func (s *Server) Fronter() *fronter.DomainFronter {
+	return s.fronter
+}
+
 func NewServer(cfg *config.Config) (*Server, error) {
 	host := cfg.Config.ListenHost
 	port := cfg.Config.ListenPort

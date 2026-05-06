@@ -741,6 +741,40 @@ func (f *DomainFronter) logStats() {
 	}
 }
 
+func (f *DomainFronter) ProbeGAS(ctx context.Context, timeout time.Duration) (string, error) {
+	payload := map[string]any{"k": "__probe_wrong_key__"}
+	jsonBody, _ := json.Marshal(payload)
+	path := f.execPath("")
+	_, _, body, err := f.h2.Request(ctx, "POST", path, f.httpHost, map[string]string{"content-type": "application/json"}, jsonBody, timeout)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(body)), nil
+}
+
+func (f *DomainFronter) ProbeWorker(probeURL string) (int, string) {
+	response := f.Relay("GET", probeURL, nil, nil)
+	nl := bytes.IndexByte(response, '\n')
+	if nl < 0 {
+		return 0, "no status line"
+	}
+	parts := strings.Fields(string(response[:nl]))
+	if len(parts) < 2 {
+		return 0, "bad status line"
+	}
+	status, _ := strconv.Atoi(parts[1])
+	if idx := bytes.Index(response, []byte("\r\n\r\n")); idx > 0 {
+		body := response[idx+4:]
+		if pStart := bytes.Index(body, []byte("<p>")); pStart >= 0 {
+			rest := body[pStart+3:]
+			if pEnd := bytes.Index(rest, []byte("</p>")); pEnd >= 0 {
+				return status, strings.TrimSpace(string(rest[:pEnd]))
+			}
+		}
+	}
+	return status, ""
+}
+
 func headerValue(headers map[string]string, name string) string {
 	for k, v := range headers {
 		if strings.ToLower(k) == name {

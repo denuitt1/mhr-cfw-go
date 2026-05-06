@@ -22,7 +22,10 @@ import (
 	"github.com/denuitt1/mhr-cfw-go/internal/mitm"
 	"github.com/denuitt1/mhr-cfw-go/internal/proxy"
 	"github.com/denuitt1/mhr-cfw-go/internal/scanner"
+	"github.com/denuitt1/mhr-cfw-go/internal/web"
 )
+
+const configFilePath = "config.yml"
 
 var placeholderAuthKeys = map[string]bool{
 	"":                             true,
@@ -82,9 +85,47 @@ func parseArgs() (*args, error) {
 }
 
 func main() {
-	if _, err := parseArgs(); err != nil {
+	a, err := parseArgs()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "args error:", err)
 		os.Exit(2)
+	}
+	if a.installCert {
+		logger.Configure("INFO")
+		if !fileExists(mitm.CACertFile) {
+			_ = mitm.NewManager()
+		}
+		if cert.InstallCA(mitm.CACertFile, cert.DefaultCertName) {
+			fmt.Println("[OK] CA installed")
+			return
+		}
+		fmt.Fprintln(os.Stderr, "CA install failed")
+		os.Exit(1)
+	}
+	if a.uninstallCert {
+		logger.Configure("INFO")
+		if cert.UninstallCA(mitm.CACertFile, cert.DefaultCertName) {
+			fmt.Println("[OK] CA removed")
+			return
+		}
+		fmt.Fprintln(os.Stderr, "CA removal failed")
+		os.Exit(1)
+	}
+	if a.scan {
+		cfg, err := config.Load()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "config error:", err)
+			os.Exit(1)
+		}
+		logger.Configure("INFO")
+		if !scanner.ScanSync(cfg.Config.FrontDomain) {
+			os.Exit(1)
+		}
+		return
+	}
+	if err := runProxy(a); err != nil {
+		fmt.Fprintln(os.Stderr, "proxy error:", err)
+		os.Exit(1)
 	}
 }
 
@@ -142,60 +183,16 @@ func runProxy(a *args) error {
 	if err != nil {
 		return err
 	}
-
-	if v := os.Getenv("DFT_AUTH_KEY"); v != "" {
-		cfg.Config.AuthKey = v
-	}
-	if v := os.Getenv("DFT_SCRIPT_ID"); v != "" {
-		vals := strings.Split(v, ",")
-		if len(vals) != 0 {
-			cfg.Config.DeploymentIDs = vals
-		}
-	}
-	if v := os.Getenv("DFT_LOG_LEVEL"); v != "" {
-		cfg.Config.LogLevel = v
-	}
-
-	if a.host != "" {
-		cfg.Config.ListenHost = a.host
-	}
-	if a.port != 0 {
-		cfg.Config.ListenPort = a.port
-	}
-	if a.socksPort != 0 {
-		cfg.Config.Socks5Port = a.socksPort
-	}
-	if a.disableSocks {
-		cfg.Config.Socks5Enabled = false
-	}
-	if a.logLevel != "" {
-		cfg.Config.LogLevel = a.logLevel
-	}
-
-	if placeholderAuthKeys[strings.TrimSpace(cfg.Config.AuthKey)] {
-		return errors.New("refusing to start: auth_key is unset or placeholder")
-	}
-
-	if len(cfg.Config.DeploymentIDs) == 0 || cfg.Config.DeploymentIDs[0] == "YOUR_APPS_SCRIPT_DEPLOYMENT_ID" {
-		return errors.New("missing script_id in config")
+	applyOverrides(cfg, a)
+	if err := validateForStart(cfg); err != nil {
+		return err
 	}
 
 	logger.Configure(cfg.Config.LogLevel)
 	log := logger.Get("Main")
 	logger.PrintBanner(constants.Version)
 	log.Infof("DomainFront Tunnel starting (Apps Script relay)")
-	log.Infof("Apps Script relay : SNI=%s -> script.google.com", cfg.Config.FrontDomain)
-
-	if ids := cfg.Config.DeploymentIDs; len(ids) > 0 {
-		if len(ids) > 1 {
-			log.Infof("Script IDs        : %d scripts (sticky per-host)", len(ids))
-			for i, id := range ids {
-				log.Infof("  [%d] %s", i+1, id)
-			}
-		} else {
-			log.Infof("Script ID         : %s", ids[0])
-		}
-	}
+	logCfgSummary(log, cfg)
 
 	if !fileExists(mitm.CACertFile) {
 		_ = mitm.NewManager()
@@ -213,14 +210,145 @@ func runProxy(a *args) error {
 		}
 	}
 
-	lanSharing := cfg.Config.LanSharing
-	listenHost := cfg.Config.ListenHost
-	if lanSharing && listenHost == "127.0.0.1" {
-		listenHost = "0.0.0.0"
-		cfg.Config.ListenHost = listenHost
+	rootCtx, rootCancel := context.WithCancel(context.Background())
+	defer rootCancel()
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-signals
+		fmt.Fprintf(os.Stderr, "\nReceived %v, shutting down...\n", sig)
+		signal.Stop(signals)
+		rootCancel()
+		go func() {
+			time.Sleep(3 * time.Second)
+			fmt.Fprintf(os.Stderr, "Force exit after timeout\n")
+			os.Exit(1)
+		}()
+	}()
+
+	var webSrv *web.Server
+	var restartCh <-chan struct{}
+	if cfg.Config.WebEnabled {
+		webSrv = web.NewServer(cfg, configFilePath)
+		restartCh = webSrv.RestartCh()
+		go func() {
+			if err := webSrv.Start(rootCtx); err != nil {
+				log.Errorf("web GUI: %v", err)
+			}
+		}()
+	}
+
+	for {
+		applyLANSharing(cfg, log)
+
+		server, err := proxy.NewServer(cfg)
+		if err != nil {
+			return err
+		}
+		if webSrv != nil {
+			webSrv.SetConfig(cfg)
+			webSrv.SetProxy(server)
+		}
+
+		proxyCtx, proxyCancel := context.WithCancel(rootCtx)
+		proxyDone := make(chan error, 1)
+		go func() { proxyDone <- server.Start(proxyCtx) }()
+
+		select {
+		case <-rootCtx.Done():
+			proxyCancel()
+			<-proxyDone
+			log.Infof("Stopped")
+			return nil
+		case <-restartCh:
+			if webSrv != nil {
+				webSrv.AckRestart()
+			}
+			log.Infof("Config saved — restarting proxy")
+			proxyCancel()
+			<-proxyDone
+			fresh, err := config.Load()
+			if err != nil {
+				return err
+			}
+			applyOverrides(fresh, a)
+			if err := validateForStart(fresh); err != nil {
+				return err
+			}
+			logger.Configure(fresh.Config.LogLevel)
+			cfg = fresh
+		case err := <-proxyDone:
+			proxyCancel()
+			if err != nil && !errors.Is(err, context.Canceled) {
+				return err
+			}
+			log.Infof("Stopped")
+			return nil
+		}
+	}
+}
+
+func applyOverrides(cfg *config.Config, a *args) {
+	if v := os.Getenv("DFT_AUTH_KEY"); v != "" {
+		cfg.Config.AuthKey = v
+	}
+	if v := os.Getenv("DFT_SCRIPT_ID"); v != "" {
+		vals := strings.Split(v, ",")
+		if len(vals) != 0 {
+			cfg.Config.DeploymentIDs = vals
+		}
+	}
+	if v := os.Getenv("DFT_LOG_LEVEL"); v != "" {
+		cfg.Config.LogLevel = v
+	}
+	if a.host != "" {
+		cfg.Config.ListenHost = a.host
+	}
+	if a.port != 0 {
+		cfg.Config.ListenPort = a.port
+	}
+	if a.socksPort != 0 {
+		cfg.Config.Socks5Port = a.socksPort
+	}
+	if a.disableSocks {
+		cfg.Config.Socks5Enabled = false
+	}
+	if a.logLevel != "" {
+		cfg.Config.LogLevel = a.logLevel
+	}
+}
+
+func validateForStart(cfg *config.Config) error {
+	if placeholderAuthKeys[strings.TrimSpace(cfg.Config.AuthKey)] {
+		return errors.New("refusing to start: auth_key is unset or placeholder")
+	}
+	if len(cfg.Config.DeploymentIDs) == 0 || cfg.Config.DeploymentIDs[0] == "YOUR_APPS_SCRIPT_DEPLOYMENT_ID" {
+		return errors.New("missing script_id in config")
+	}
+	return nil
+}
+
+func logCfgSummary(log *logger.Logger, cfg *config.Config) {
+	log.Infof("Apps Script relay : SNI=%s -> script.google.com", cfg.Config.FrontDomain)
+	if ids := cfg.Config.DeploymentIDs; len(ids) > 0 {
+		if len(ids) > 1 {
+			log.Infof("Script IDs        : %d scripts (sticky per-host)", len(ids))
+			for i, id := range ids {
+				log.Infof("  [%d] %s", i+1, id)
+			}
+		} else {
+			log.Infof("Script ID         : %s", ids[0])
+		}
+	}
+}
+
+func applyLANSharing(cfg *config.Config, log *logger.Logger) {
+	if cfg.Config.LanSharing && cfg.Config.ListenHost == "127.0.0.1" {
+		cfg.Config.ListenHost = "0.0.0.0"
 		log.Infof("LAN sharing enabled - listening on all interfaces")
 	}
-	lanMode := lanSharing || listenHost == "0.0.0.0" || listenHost == "::"
+	lanMode := cfg.Config.LanSharing || cfg.Config.ListenHost == "0.0.0.0" || cfg.Config.ListenHost == "::"
 	if lanMode {
 		var socksPort *int
 		if cfg.Config.Socks5Enabled {
@@ -229,36 +357,6 @@ func runProxy(a *args) error {
 		}
 		lan.LogLANAccess(cfg.Config.ListenPort, socksPort)
 	}
-
-	server, err := proxy.NewServer(cfg)
-	if err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-signals
-		fmt.Fprintf(os.Stderr, "\nReceived %v, shutting down...\n", sig)
-		signal.Stop(signals)
-		cancel()
-
-		go func() {
-			time.Sleep(3 * time.Second)
-			fmt.Fprintf(os.Stderr, "Force exit after timeout\n")
-			os.Exit(1)
-		}()
-	}()
-
-	err = server.Start(ctx)
-	if err != nil && !errors.Is(err, context.Canceled) {
-		return err
-	}
-	log.Infof("Stopped")
-	return nil
 }
 
 func fileExists(path string) bool {

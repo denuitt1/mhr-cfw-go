@@ -16,6 +16,11 @@ const (
 	DefaultGoogleIP                   = "216.239.38.120"
 	DefaultVerifySSL                  = true
 	DefaultLogLevel                   = "INFO"
+	DefaultWebEnabled                 = true
+	DefaultWebPort                    = 8081
+	DefaultProbeURL                   = "https://www.gstatic.com/generate_204"
+	DefaultWorkerURL                  = ""
+	DefaultUpstreamForwarderURL       = ""
 	DefaultRelayTimeout               = RelayTimeout
 	DefaultTCPConnectTimeout          = TCPConnectTimeout
 	DefaultTLSConnectTimeout          = TLSConnectTimeout

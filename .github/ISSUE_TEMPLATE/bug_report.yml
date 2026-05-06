@@ -1,0 +1,44 @@
+name: Bug report
+description: Something is broken in the proxy
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "e.g. 1.0.0 or commit abc1234 (run `mhrcfw-cli --version`)"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: "e.g. Windows 11, macOS 14, Ubuntu 22.04"
+    validations:
+      required: true
+
+  - type: input
+    id: go
+    attributes:
+      label: Go version (only if building from source)
+      placeholder: "e.g. go1.26.2"
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: DEBUG log excerpt (redact `auth_key` and `deployment_ids`)
+      render: text

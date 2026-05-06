@@ -1,0 +1,18 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="go build (windows-386)" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="mhr-cfw-go" />
+    <working_directory value="$PROJECT_DIR$" />
+    <go_parameters value="-o ../../build/windows/386/mhrcfw-cli.exe" />
+    <envs>
+      <env name="GOOS" value="windows" />
+      <env name="GOARCH" value="386" />
+    </envs>
+    <kind value="PACKAGE" />
+    <package value="github.com/denuitt1/mhr-cfw-go/cmd/cli" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$" />
+    <output_directory value="$PROJECT_DIR$/build/windows/x86" />
+    <option name="run" value="false" />
+    <method v="2" />
+  </configuration>
+</component>

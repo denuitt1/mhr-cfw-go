@@ -1,2 +1,14 @@
 # ide files
 .idea/
+
+# build directory
+build/
+
+# config.yml file
+config.yml
+
+# generated ca certificate directory
+ca/
+
+# internal debug files (developer only)
+cmd/debug/

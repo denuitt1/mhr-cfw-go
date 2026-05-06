@@ -1,0 +1,113 @@
+# docker-compose.yml
+
+name: "mhr-cfw-upstream-forwarder-cluster"
+
+services:
+  traefik:
+    image: traefik:v3.6
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik.yml:/traefik.yml:ro"
+      - "./data/letsencrypt/acme.json:/letsencrypt/acme.json"
+    networks:
+      - traefik-network
+    ports:
+      - 80:80
+      - 443:443
+      # - 8080:8080
+    command:
+      - "--configFile=/traefik.yml"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.entrypoints=web,websecure"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.docker.network=traefik-network"
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: unless-stopped
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "portainer-data:/data"
+    networks:
+      - traefik-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${DOMAIN}`)"
+      - "traefik.http.routers.portainer.entrypoints=web,websecure"
+      - "traefik.http.routers.portainer.tls=true"
+      - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.docker.network=traefik-network"
+  mhr-cfw-upstream-forwarder-node1:
+    image: mhr-cfw-upstream-forwarder-node1
+    build: ./services/mhr-cfw-upstream-forwarder/.
+    container_name: mhr-cfw-upstream-forwarder-node1
+    restart: unless-stopped
+    networks:
+      - traefik-network
+    environment:
+      AUTH_KEY: "YOUR_SECRET_KEY" # replace with your own secret key
+      PORT: 8787
+      HOST: 0.0.0.0
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node1.rule=Host(`node1.${DOMAIN}`)"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node1.entrypoints=web,websecure"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node1.tls=true"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node1.tls.certresolver=letsencrypt"
+      - "traefik.http.services.mhr-cfw-upstream-forwarder-node1.loadbalancer.server.port=8787"
+      - "traefik.docker.network=traefik-network"
+    # Optional: basic healthcheck
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  mhr-cfw-upstream-forwarder-node2:
+    image: mhr-cfw-upstream-forwarder-node2
+    build: ./services/mhr-cfw-upstream-forwarder/.
+    container_name: mhr-cfw-upstream-forwarder-node2
+    restart: unless-stopped
+    networks:
+      - traefik-network
+    environment:
+      AUTH_KEY: "YOUR_SECRET_KEY" # replace with your own secret key
+      PORT: 8787
+      HOST: 0.0.0.0
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node2.rule=Host(`node2.${DOMAIN}`)"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node2.entrypoints=web,websecure"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node2.tls=true"
+      - "traefik.http.routers.mhr-cfw-upstream-forwarder-node2.tls.certresolver=letsencrypt"
+      - "traefik.http.services.mhr-cfw-upstream-forwarder-node2.loadbalancer.server.port=8787"
+      - "traefik.docker.network=traefik-network"
+    # Optional: basic healthcheck
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  portainer-data:
+    name: portainer-data
+    external: false
+
+networks:
+  traefik-network:
+    name: traefik-network
+    driver: bridge
+    external: true

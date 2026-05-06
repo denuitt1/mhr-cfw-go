@@ -2,7 +2,7 @@ package constants
 
 const AppTitle = "MHR-CFW Go"
 const ProjectURL = "https://github.com/denuitt1/mhr-cfw-go"
-const Version = "0.1.0"
+const Version = "1.0.0"
 
 const (
 	DefaultMode                       = "relay"

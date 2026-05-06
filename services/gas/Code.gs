@@ -1,178 +1,131 @@
-// Google Apps Script File - v1.0.0
+// Google Apps Script - v1.0.0
 
-const WORKER_URL = "myworker.workers.dev";
+const AUTH_KEY = "STRONG_SECRET_KEY";
+const WORKER_URL = "https://example.workers.dev";
 
-const DEFAULT_UPSTREAM_TIMEOUT_MS = 25000;
-
-export default {
-  async fetch(request, env) {
-    try {
-      const hop = request.headers.get("x-relay-hop");
-      const fwdHop = request.headers.get("x-fwd-hop");
-      if (hop === "1" || fwdHop === "1") {
-        return json({ e: "loop detected" }, 508);
-      }
-
-      if (request.method == "GET") {
-        return json({ e: "Relay is Active." }, 200);
-      }
-
-      if (request.method !== "POST") {
-        return json({ e: "Method not allowed." }, 405);
-      }
-
-      const req = await request.json();
-
-      if (!req.u) {
-        return json({ e: "missing url" }, 400);
-      }
-
-      const targetUrl = new URL(req.u);
-
-      const BLOCKED_HOSTS = [
-        WORKER_URL,
-      ];
-
-      if (BLOCKED_HOSTS.some(h => targetUrl.hostname.endsWith(h))) {
-        return json({ e: "self-fetch blocked" }, 400);
-      }
-
-      const upstreamUrl = (env && env.UPSTREAM_FORWARDER_URL) || "";
-      if (upstreamUrl) {
-        const upstreamResp = await forwardViaUpstream(req, env, upstreamUrl);
-        if (upstreamResp) return upstreamResp;
-        // fall through to direct fetch only when fail-mode is open
-      }
-
-      const headers = new Headers();
-      if (req.h && typeof req.h === "object") {
-        for (const [k, v] of Object.entries(req.h)) {
-          headers.set(k, v);
-        }
-      }
-
-      headers.set("x-relay-hop", "1");
-
-      const fetchOptions = {
-        method: (req.m || "GET").toUpperCase(),
-        headers,
-        redirect: req.r === false ? "manual" : "follow"
-      };
-
-      if (req.b) {
-        const binary = Uint8Array.from(atob(req.b), c => c.charCodeAt(0));
-        fetchOptions.body = binary;
-      }
-
-      const resp = await fetch(targetUrl.toString(), fetchOptions);
-
-      // Read response safely (no stack overflow)
-      const buffer = await resp.arrayBuffer();
-      const uint8 = new Uint8Array(buffer);
-
-      let binary = "";
-      const chunkSize = 0x8000; // prevent call stack overflow
-
-      for (let i = 0; i < uint8.length; i += chunkSize) {
-        binary += String.fromCharCode.apply(
-          null,
-          uint8.subarray(i, i + chunkSize)
-        );
-      }
-
-      const base64 = btoa(binary);
-
-      const responseHeaders = {};
-      resp.headers.forEach((v, k) => {
-        responseHeaders[k] = v;
-      });
-
-      return json({
-        s: resp.status,
-        h: responseHeaders,
-        b: base64
-      });
-
-    } catch (err) {
-      return json({ e: String(err) }, 500);
-    }
-  }
+const SKIP_HEADERS = {
+  host: 1, connection: 1, "content-length": 1,
+  "transfer-encoding": 1, "proxy-connection": 1, "proxy-authorization": 1,
 };
 
-async function forwardViaUpstream(req, env, upstreamUrl) {
-  const failMode = (env.UPSTREAM_FAIL_MODE || "closed").toLowerCase();
-  const timeoutMs = parseInt(env.UPSTREAM_TIMEOUT_MS, 10) || DEFAULT_UPSTREAM_TIMEOUT_MS;
-  const authKey = env.UPSTREAM_AUTH_KEY || "";
-
-  let parsed;
+function doPost(e) {
   try {
-    parsed = new URL(upstreamUrl);
-  } catch (_) {
-    return upstreamFailure("invalid UPSTREAM_FORWARDER_URL", failMode);
-  }
-  if (parsed.protocol !== "https:") {
-    return upstreamFailure("UPSTREAM_FORWARDER_URL must be https://", failMode);
-  }
-  if (parsed.hostname.endsWith(WORKER_URL)) {
-    return upstreamFailure("self-forward blocked", failMode);
-  }
-  if (!authKey) {
-    return upstreamFailure("UPSTREAM_AUTH_KEY missing", failMode);
-  }
+    var req = JSON.parse(e.postData.contents);
+    if (req.k !== AUTH_KEY) return _json({ e: "unauthorized" });
 
-  const payload = {
-    u: req.u,
-    m: req.m,
-    h: req.h,
-    b: req.b,
-    ct: req.ct,
-    r: req.r
-  };
+    if (Array.isArray(req.q)) return _doBatch(req.q);
+    return _doSingle(req);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const resp = await fetch(upstreamUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-upstream-auth": authKey
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
-
-    if (!resp.ok) {
-      return upstreamFailure("forwarder status " + resp.status, failMode);
-    }
-
-    // Pass body straight through without parsing — saves CPU and memory.
-    const body = await resp.text();
-    return new Response(body, {
-      status: 200,
-      headers: { "content-type": "application/json" }
-    });
   } catch (err) {
-    return upstreamFailure(String(err && err.message || err), failMode);
-  } finally {
-    clearTimeout(timer);
+    return _json({ e: String(err) });
   }
 }
 
-function upstreamFailure(reason, failMode) {
-  if (failMode === "open") {
-    console.warn("upstream forwarder failed (falling back to direct):", reason);
-    return null; // signals caller to fall through to direct fetch
+function _doSingle(req) {
+  if (!req.u || typeof req.u !== "string" || !req.u.match(/^https?:\/\//i)) {
+    return _json({ e: "bad url" });
   }
-  return json({ e: "upstream forwarder failed: " + reason }, 502);
-}
 
-function json(obj, status = 200) {
-  return new Response(JSON.stringify(obj), {
-    status,
-    headers: {
-      "content-type": "application/json"
-    }
+  var payload = _buildWorkerPayload(req);
+
+  var resp = UrlFetchApp.fetch(WORKER_URL, {
+    method: "post",
+    contentType: "application/json",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+    followRedirects: true
   });
+
+  try {
+    return _json(JSON.parse(resp.getContentText()));
+  } catch (e) {
+    return _json({ e: "invalid worker response", raw: resp.getContentText() });
+  }
+}
+
+function _doBatch(items) {
+  var fetchArgs = [];
+  var errorMap = {};
+
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+
+    if (!item.u || typeof item.u !== "string" || !item.u.match(/^https?:\/\//i)) {
+      errorMap[i] = "bad url";
+      continue;
+    }
+
+    var payload = _buildWorkerPayload(item);
+
+    fetchArgs.push({
+      _i: i,
+      _o: {
+        url: WORKER_URL,
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify(payload),
+        muteHttpExceptions: true,
+        followRedirects: true
+      }
+    });
+  }
+
+  var responses = [];
+  if (fetchArgs.length > 0) {
+    responses = UrlFetchApp.fetchAll(fetchArgs.map(function(x) { return x._o; }));
+  }
+
+  var results = [];
+  var rIdx = 0;
+
+  for (var i = 0; i < items.length; i++) {
+    if (errorMap.hasOwnProperty(i)) {
+      results.push({ e: errorMap[i] });
+    } else {
+      var resp = responses[rIdx++];
+      try {
+        results.push(JSON.parse(resp.getContentText()));
+      } catch (e) {
+        results.push({ e: "invalid worker response", raw: resp.getContentText() });
+      }
+    }
+  }
+
+  return _json({ q: results });
+}
+
+function _buildWorkerPayload(req) {
+  var headers = {};
+
+  if (req.h && typeof req.h === "object") {
+    for (var k in req.h) {
+      if (req.h.hasOwnProperty(k) && !SKIP_HEADERS[k.toLowerCase()]) {
+        headers[k] = req.h[k];
+      }
+    }
+  }
+
+  return {
+    u: req.u,
+    m: (req.m || "GET").toUpperCase(),
+    h: headers,
+    b: req.b || null,
+    ct: req.ct || null,
+    r: req.r !== false
+  };
+}
+
+function doGet(e) {
+  return HtmlService.createHtmlOutput(
+    "<!DOCTYPE html><html><head><title>My App</title></head>" +
+      '<body style="font-family:sans-serif;max-width:600px;margin:40px auto">' +
+      "<h1>Relay Active</h1><p>Cloudflare Worker routing enabled.</p>" +
+      "</body></html>"
+  );
+}
+
+function _json(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
 }

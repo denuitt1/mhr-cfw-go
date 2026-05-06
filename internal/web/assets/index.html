@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>MHR-CFW</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+    <h1 id="app-title">MHR-CFW</h1>
+    <span id="app-version" class="muted"></span>
+</header>
+
+<section class="card">
+    <div class="card-head">
+        <h2>Connection status</h2>
+        <button id="probe-btn" type="button">Run checks</button>
+    </div>
+    <div id="probes" class="probe-grid">
+        <div class="probe" data-key="google">
+            <span class="dot dot-idle"></span>
+            <div class="probe-body">
+                <div class="probe-label">Google front</div>
+                <div class="probe-detail muted">TCP + TLS to <code>google_ip</code> with SNI <code>front_domain</code></div>
+                <div class="probe-status muted">—</div>
+            </div>
+        </div>
+        <div class="probe" data-key="gas">
+            <span class="dot dot-idle"></span>
+            <div class="probe-body">
+                <div class="probe-label">Apps Script</div>
+                <div class="probe-detail muted">Wrong-auth POST — expects <code>{"e":"unauthorized"}</code></div>
+                <div class="probe-status muted">—</div>
+            </div>
+        </div>
+        <div class="probe" data-key="worker">
+            <span class="dot dot-idle"></span>
+            <div class="probe-body">
+                <div class="probe-label">Worker + upstream</div>
+                <div class="probe-detail muted" id="worker-probe-detail">Full relay to <code id="probe-url-display">probe_url</code></div>
+                <div class="probe-status muted">—</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <div class="card-head">
+        <h2>Configuration</h2>
+        <span class="muted">Saving restarts the proxy. The web UI stays up.</span>
+    </div>
+    <form id="config-form">
+        <div id="form-sections"></div>
+        <div class="form-actions">
+            <button type="submit">Save &amp; restart</button>
+            <span id="form-msg" class="muted"></span>
+        </div>
+    </form>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

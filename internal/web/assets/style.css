@@ -1,0 +1,203 @@
+:root {
+    color-scheme: light dark;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --border: #e2e5ea;
+    --text: #1d2129;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --input-bg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0f1115;
+        --card: #161a21;
+        --border: #262b34;
+        --text: #e6e8eb;
+        --muted: #8b94a3;
+        --accent: #3b82f6;
+        --input-bg: #0f1115;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 32px 24px 64px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 880px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0;
+}
+
+h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.muted { color: var(--muted); font-size: 13px; }
+code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    gap: 12px;
+}
+
+button {
+    font: inherit;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-text);
+    cursor: pointer;
+}
+button:disabled { opacity: 0.5; cursor: progress; }
+button:hover:not(:disabled) { filter: brightness(1.05); }
+
+.probe-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.probe {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 6px;
+    background: var(--muted);
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.04);
+}
+
+.dot-idle    { background: var(--muted); }
+.dot-loading { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
+.dot-ok      { background: var(--ok); }
+.dot-err     { background: var(--err); }
+
+@keyframes pulse {
+    0%, 100% { opacity: 0.45; }
+    50% { opacity: 1; }
+}
+
+.probe-body { flex: 1; min-width: 0; }
+.probe-label { font-weight: 600; }
+.probe-detail { margin-top: 2px; }
+.probe-status { margin-top: 4px; word-break: break-word; }
+.probe-status.ok { color: var(--ok); }
+.probe-status.err { color: var(--err); }
+
+#config-form { display: block; }
+.tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+}
+.tab {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] {
+    background: var(--card);
+    color: var(--text);
+    border-color: var(--border);
+}
+
+.tab-panels { padding-top: 4px; }
+.tab-panel[hidden] { display: none; }
+
+.form-grid {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) 1fr;
+    gap: 10px 16px;
+    align-items: start;
+}
+.row-label {
+    padding-top: 8px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    color: var(--muted);
+}
+.row-input input:not([type="checkbox"]),
+.row-input textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--input-bg);
+    color: var(--text);
+    font: inherit;
+}
+.row-input textarea {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 72px;
+}
+.row-input input[type="checkbox"] { transform: scale(1.1); }
+
+.form-actions {
+    margin-top: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+#form-msg.ok { color: var(--ok); }
+#form-msg.err { color: var(--err); }

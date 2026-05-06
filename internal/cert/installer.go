@@ -15,7 +15,7 @@ import (
 	"github.com/denuitt1/mhr-cfw-go/internal/logger"
 )
 
-const DefaultCertName = "MHR-CFW-GO"
+const DefaultCertName = "MHR-CFW"
 
 var log = logger.Get("Cert")
 

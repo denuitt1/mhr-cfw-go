@@ -33,43 +33,6 @@ Client -> Local Relay -> Google/CDN Front -> GAS (Google Apps Script) Relay -> C
             +-> مخفی‌سازی ترافیک پشت سرویس‌های معتبر گوگل
 ```
 
-این متن دقیقاً برای فایل README_FA.md بهینه‌سازی شده است. از استانداردهای مارک‌داون (Markdown) استفاده شده تا در گیت‌هاب به بهترین شکل نمایش داده شود.
-
-فقط کافیست کل متن زیر را کپی و در فایل خود قرار دهید:
-
-Markdown
-
-# نسخه Go پروژه MHR-CFW
-
-[![GitHub](https://img.shields.io/badge/GitHub-MHR_CFW-blue?logo=github)](https://github.com/denuitt1/mhr-cfw)
-
-| [English](README.md) | [فارسی](README_FA.md) |
-| :------------------: | :-------------------: |
-
----
-
-## مکانیزم عملکرد (How It Works)
-
-این پروژه با بهره‌گیری از زیرساخت‌های ابری، ترافیک را به گونه‌ای تونل می‌کند که سیستم‌های بازرسی شبکه (DPI)، تنها ارتباط با دامنه‌های مجاز (مانند Google) را شناسایی کنند.
-
-### ۱. اتصال مستقیم GAS
-
-Client -> Local Relay -> Google/CDN Front -> GAS (Google Apps Script) Relay -> Exit
-|
-+-> نمایش دامنه www.google.com به فیلترینگ شبکه
-
-### ۲. ترکیب GAS و Cloudflare Worker
-
-Client -> Local Relay -> Google/CDN Front -> GAS Relay -> Cloudflare Worker -> Exit
-|
-+-> مخفی‌سازی ترافیک پشت سرویس‌های معتبر گوگل
-
-### ۳. زنجیره پیشرفته (GAS + CF Worker + Upstream)
-
-Client -> Local Relay -> Google/CDN Front -> GAS Relay -> CF Worker -> Self-Hosted Upstream -> Exit
-|
-+-> امنیت حداکثری و تغییر IP خروجی به سرور شخصی
-
 **تحلیل فنی:**
 در حالت استاندارد، کلاینت ترافیک را به پروکسی محلی (Local Proxy) می‌فرستد. این پروکسی درخواست‌ها را در قالب بسته‌های دیتای گوگل بسته‌بندی می‌کند. رله‌ی مستقر در سمت سرور، درخواست واقعی را استخراج کرده، از طریق Cloudflare Worker محتوا را واکشی می‌کند و پاسخ را از همان مسیر امن به کلاینت بازمی‌گرداند.
 
